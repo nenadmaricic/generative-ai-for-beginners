@@ -5,6 +5,7 @@
   "main": "main.js",
   "scripts": {
     "build": "rimraf build && tsc",
+    "watch": "rimraf build && tsc -w",
     "preserve": "npm run build",
     "start": "nodemon"
   },
@@ -22,9 +23,14 @@
     "typescript": "^5.3.3"
   },
   "dependencies": {
-    "@azure/openai": "^1.0.0-beta.10",
+    "@azure-rest/ai-inference": "latest",
+    "@azure/core-auth": "latest",
+    "@azure/core-sse": "latest",
+    "@azure/openai": "latest",
+    "@azure/identity": "latest",
+    "openai": "^4.8.0",
     "dotenv": "^16.3.1",
-    "rimraf": "^5.0.5"
+    "rimraf": "^6.1.0"
   },
   "nodemonConfig": {
     "watch": [

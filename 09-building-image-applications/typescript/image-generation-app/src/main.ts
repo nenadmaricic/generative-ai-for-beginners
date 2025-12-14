@@ -1,34 +1,48 @@
-import { OpenAIClient, AzureKeyCredential } from "@azure/openai";
-import * as dotenv from "dotenv";
+import {
+    DefaultAzureCredential,
+    getBearerTokenProvider,
+} from '@azure/identity';
+import * as dotenv from 'dotenv';
+import { AzureOpenAI } from 'openai';
 
-dotenv.config();
+async function main() {
+    dotenv.config({ path: '.env' });
 
-const endpoint = process.env.AZURE_OPENAI_ENDPOINT || '';
-const azureApiKey = process.env.AZURE_OPENAI_API_KEY || '';
+    const endpoint = process.env.AZURE_OPENAI_ENDPOINT || '';
+    const azureApiKey = process.env.AZURE_API_KEY || '';
+    const deployment = process.env.AZURE_OPENAI_DEPLOYMENT || 'dall-e-3';
 
-const promptImage = "captain with a parrot on his shoulder";
+    const credential = new DefaultAzureCredential();
+    const scope = 'https://cognitiveservices.azure.com/.default';
+    const azureADTokenProvider = getBearerTokenProvider(credential, scope);
 
-export async function main() {
-  try {
-    console.log("== Image Generation App ==");
+    const apiVersion = '2024-08-01-preview';
 
-    const client = new OpenAIClient(endpoint, new AzureKeyCredential(azureApiKey));
-    const deploymentName = 'dall-e-3';
+    const client = new AzureOpenAI({
+        endpoint,
+        apiKey: azureApiKey,
+        deployment,
+        apiVersion,
+    });
+    console.log('== Image Generation App ==');
 
-    const imageGenerations = await client.getImages(deploymentName, promptImage, {
-      n: 1,
-      size: "1024x1024",
-      responseFormat: "url",
-      quality: "standard",
-      style: "vivid",
+    const imagesResponse = await client.images.generate({
+        prompt: 'A futuristic cityscape at sunset, digital art',
+        n: 1,
+        size: '1024x1024',
     });
 
-    for (const image of imageGenerations.data) {
-      console.log(`Image generated URL...: ${image.url}`);
+    for (const image of imagesResponse.data ?? []) {
+        console.log(`Image generated URL...: ${image.url}`);
     }
-  } catch (error) {
-    console.log("The sample encountered an error: ", error);
-  }
 }
 
-main();
+main()
+    .then(() => {
+        console.log('Sample run complete');
+        process.exit(0);
+    })
+    .catch((error) => {
+        console.error('Error running sample:', error);
+        process.exit(1);
+    });
