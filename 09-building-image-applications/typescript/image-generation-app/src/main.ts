@@ -27,7 +27,7 @@ async function main() {
     console.log('== Image Generation App ==');
 
     const imagesResponse = await client.images.generate({
-        prompt: 'A futuristic cityscape at sunset, digital art',
+        prompt: 'image of a alan ford comics character with a happy face wearing dress of the serbian football team',
         n: 1,
         size: '1024x1024',
     });
