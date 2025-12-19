@@ -16,7 +16,9 @@ const deployment = process.env.AZURE_OPENAI_DEPLOYMENT || 'gpt-4';
 
 async function findLocationCoordinates(city: string) {
     const geocodingUrl = `https://nominatim.openstreetmap.org/search?city=${city}&format=json&limit=1`;
-    const response = await axios.get(geocodingUrl);
+    const response = await axios.get(geocodingUrl, {
+        headers: { 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36' },
+    });
     if (response.data.length === 0) {
         return JSON.stringify({ error: `Location not found: ${city}` });
     }
@@ -39,6 +41,7 @@ async function findWeather(longitude: number, latitude: number, unit: string) {
         timezone: 'Europe/Berlin',
         latitude,
         longitude,
+        forecast_days: 5,
     };
     const url = 'https://api.open-meteo.com/v1/forecast';
     const responses = await fetchWeatherApi(url, params);
@@ -120,95 +123,117 @@ const getCurrentWeatherFunction = {
 };
 
 async function main() {
-    try {
-        console.log('== Chat Completions App with Functions ==');
+    console.log('== Chat Completions App with Functions ==');
 
-        const credential = new DefaultAzureCredential();
-        const scope = 'https://cognitiveservices.azure.com/.default';
-        const azureADTokenProvider = getBearerTokenProvider(credential, scope);
+    const credential = new DefaultAzureCredential();
+    const scope = 'https://cognitiveservices.azure.com/.default';
+    const azureADTokenProvider = getBearerTokenProvider(credential, scope);
 
-        const apiVersion = '2024-08-01-preview';
+    const apiVersion = '2024-08-01-preview';
 
-        const client = new AzureOpenAI({
-            endpoint,
-            apiKey: azureApiKey,
-            deployment,
-            apiVersion,
-        });
+    const client = new AzureOpenAI({
+        endpoint,
+        apiKey: azureApiKey,
+        deployment,
+        apiVersion,
+    });
 
-        const userParams = {
-            location: 'Belgrade',
-            unit: 'C',
-        };
+    const userParams = {
+        location: 'Belgrade',
+        unit: 'C',
+    };
 
-        const messages: ChatCompletionMessageParam[] = [
-            {
-                role: 'system',
-                content:
-                    'You are a helpful assistant that provides weather information.',
-            },
-            {
-                role: 'user',
-                content: `What's the weather in ${userParams.location}, unit ${userParams.unit}?`,
-            },
-        ];
-        const result = await client.chat.completions.create({
-            messages: messages,
-            tools: [
-                getCurrentWeatherFunction,
-                getCityLongitudeAndLatitudeFunction,
-            ],
-            model: deployment,
-            max_tokens: 128,
-            stream: false,
-        });
+    const messages: ChatCompletionMessageParam[] = [
+        {
+            role: 'system',
+            content:
+                'You are a helpful assistant that provides weather information.',
+        },
+        {
+            role: 'user',
+            content: `What's the weather in ${userParams.location}, unit ${userParams.unit}?`,
+        },
+    ];
+    const result = await client.chat.completions.create({
+        messages: messages,
+        tools: [getCurrentWeatherFunction, getCityLongitudeAndLatitudeFunction],
+        model: deployment,
+        max_tokens: 128,
+        stream: false,
+    });
 
-        let choice = result.choices[0];
+    let choice = result.choices[0];
 
-        if (
-            choice.message?.tool_calls?.length !== 1 &&
-            choice.message?.tool_calls?.[0].function.name !== 'findCityCoordinates'
-        ) {
-            throw new Error('Expected function call to be findCityCoordinates');
-        }
-        const argumentsJson = choice.message.tool_calls[0].function.arguments;
-        const { city } = JSON.parse(argumentsJson);
-        let coordinates = await findLocationCoordinates(city);
-
-        // Add the assistant's message with tool_calls first
-        messages.push(choice.message);
-        
-        // Then add the tool response
-        messages.push({
-            role: 'tool',
-            tool_call_id: choice.message.tool_calls[0].id,
-            content: coordinates,
-        });
-        const result1 = await client.chat.completions.create({
-            messages: messages,
-            tools: [
-                getCurrentWeatherFunction,
-                getCityLongitudeAndLatitudeFunction,
-            ],
-            model: deployment,
-            max_tokens: 128,
-            stream: false,
-        });
-
-        choice = result1.choices[0];
-        if (
-            choice.message?.tool_calls?.length !== 1 &&
-            choice.message?.tool_calls?.[0].function.name !== 'findWeather'
-        ) {
-            throw new Error('Expected function call to be findWeather');
-        }
-        const findWeatherArguments = choice.message.tool_calls[0].function.arguments;
-        const { latitude, longitude, unit } = JSON.parse(findWeatherArguments);
-        let weather = await findWeather(longitude, latitude, unit);
-        console.log('Result from open-meteo API..: ', weather);
-    } catch (error) {
-        console.error('The sample encountered an error...:', error);
+    if (
+        choice.message?.tool_calls?.length !== 1 &&
+        choice.message?.tool_calls?.[0].function.name !== 'findCityCoordinates'
+    ) {
+        throw new Error('Expected function call to be findCityCoordinates');
     }
+    const argumentsJson = choice.message.tool_calls[0].function.arguments;
+    const { city } = JSON.parse(argumentsJson);
+    let coordinates = await findLocationCoordinates(city);
+
+    // Add the assistant's message with tool_calls first
+    messages.push(choice.message);
+
+    // Then add the tool response
+    messages.push({
+        role: 'tool',
+        tool_call_id: choice.message.tool_calls[0].id,
+        content: coordinates,
+    });
+    const result1 = await client.chat.completions.create({
+        messages: messages,
+        tools: [getCurrentWeatherFunction, getCityLongitudeAndLatitudeFunction],
+        model: deployment,
+        max_tokens: 128,
+        stream: false,
+    });
+
+    choice = result1.choices[0];
+    if (
+        choice.message?.tool_calls?.length !== 1 &&
+        choice.message?.tool_calls?.[0].function.name !== 'findWeather'
+    ) {
+        throw new Error('Expected function call to be findWeather');
+    }
+    const findWeatherArguments =
+        choice.message.tool_calls[0].function.arguments;
+    const { latitude, longitude, unit } = JSON.parse(findWeatherArguments);
+    let weather = await findWeather(longitude, latitude, unit);
+
+    messages.push(choice.message);
+
+    // Then add the tool response
+    messages.push({
+        role: 'tool',
+        tool_call_id: choice.message.tool_calls[0].id,
+        content: weather,
+    });
+    messages.push({
+        role: 'user',
+        content: `Provide a summary of the weather in ${city} in ${unit} unit based on the provided data; summarize by day.`,
+    });
+
+    const summary = await client.chat.completions.create({
+        messages: messages,
+        tools: [getCurrentWeatherFunction, getCityLongitudeAndLatitudeFunction],
+        model: deployment,
+        max_tokens: 1024,
+        stream: false,
+    });
+    choice = summary.choices[0];
+
+    console.log('Weather summary: ', choice.message?.content);
 }
 
-main();
+main()
+    .then(() => {
+        console.log('== Complete ==');
+        process.exit(0);
+    })
+    .catch((error) => {
+        console.error('== Error ==', error);
+        process.exit(1);
+    });
